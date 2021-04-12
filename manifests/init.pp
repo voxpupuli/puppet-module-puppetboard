@@ -22,6 +22,7 @@
 # @param python_loglevel Python logging module log level.
 # @param python_proxy HTTP proxy server to use for pip/virtualenv.
 # @param python_index HTTP index server to use for pip/virtualenv.
+# @param python_systempkgs Python system packages available in virtualenv.
 # @param default_environment set the default environment
 # @param experimental Enable experimental features.
 # @param revision Commit, tag, or branch from Puppetboard's Git repo to be used
@@ -81,6 +82,7 @@ class puppetboard (
   Puppetboard::Syslogpriority $python_loglevel                = 'info',
   Optional[String[1]] $python_proxy                           = undef,
   Optional[String[1]] $python_index                           = undef,
+  Boolean $python_systempkgs                                  = false,
   Boolean $experimental                                       = false,
   Optional[String] $revision                                  = undef,
   Boolean $manage_user                                        = true,
@@ -161,7 +163,7 @@ class puppetboard (
   python::pyvenv { $virtualenv_dir:
     ensure      => present,
     version     => $python_version,
-    systempkgs  => false,
+    systempkgs => $python_systempkgs,
     owner       => $user,
     group       => $group,
     require     => Vcsrepo["${basedir}/puppetboard"],
