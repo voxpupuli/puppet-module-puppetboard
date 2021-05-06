@@ -59,6 +59,11 @@ class puppetboard::apache::vhost (
     },
   }
 
+  $repo_require = $puppetboard::manage_repo ? {
+    true  => Vcsrepo[$docroot],
+    false => undef,
+  }
+
   file { "${docroot}/wsgi.py":
     ensure  => file,
     content => file("${module_name}/wsgi.py"),
@@ -66,7 +71,7 @@ class puppetboard::apache::vhost (
     group   => $group,
     require => [
       User[$user],
-      Vcsrepo[$docroot],
+      $repo_require,
     ],
   }
 
@@ -90,6 +95,7 @@ class puppetboard::apache::vhost (
   apache::vhost { $vhost_name:
     port                => $port,
     docroot             => $docroot,
+    manage_docroot      => false,
     ssl                 => $ssl,
     ssl_cert            => $ssl_cert,
     ssl_key             => $ssl_key,
@@ -103,5 +109,8 @@ class puppetboard::apache::vhost (
     notify              => Service[$puppetboard::apache_service],
     *                   => $custom_apache_parameters,
   }
-  File["${basedir}/puppetboard/settings.py"] ~> Service['httpd']
+
+  if $puppetboard::manage_repo {
+    File["${basedir}/puppetboard/settings.py"] ~> Service[$puppetboard::apache_service]
+  }
 }

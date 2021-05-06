@@ -26,11 +26,14 @@
 # @param experimental Enable experimental features.
 # @param revision Commit, tag, or branch from Puppetboard's Git repo to be used
 # @param manage_git If true, require the git package. If false do nothing.
+# @param manage_repo If true, install puppetboard from the project repository
 # @param manage_virtualenv If true, require the virtualenv package. If false do nothing.
 # @param python_version Python version to use in virtualenv.
 # @param virtualenv_dir Set location where virtualenv will be installed
 # @param manage_user If true, manage (create) this group. If false do nothing.
 # @param manage_group If true, manage (create) this group. If false do nothing.
+# @param manage_package If true, install puppetboard using a package
+# @param package_name Name of the package to install puppetboard
 # @param manage_selinux If true, manage selinux policies for puppetboard. If false do nothing.
 # @param reports_count This is the number of reports that we want the dashboard to display.
 # @param listen If set to 'public' puppetboard will listen on all interfaces
@@ -85,7 +88,10 @@ class puppetboard (
   Optional[String] $revision                                  = undef,
   Boolean $manage_user                                        = true,
   Boolean $manage_group                                       = true,
+  Boolean $manage_package                                     = false,
+  Optional[String[1]] $package_name                           = undef,
   Boolean $manage_git                                         = false,
+  Boolean $manage_repo                                        = true,
   Boolean $manage_virtualenv                                  = false,
   Stdlib::Absolutepath $virtualenv_dir                        = "${basedir}/virtenv-puppetboard",
   Integer[0] $reports_count                                   = 10,
@@ -97,6 +103,10 @@ class puppetboard (
   Boolean $enable_ldap_auth                                   = false,
   Boolean $ldap_require_group                                 = false,
 ) {
+  if $manage_package and ($manage_repo or $manage_virtualenv) {
+    fail("\$manage_package and \$manage_repo / \$manage_virtualenv are mutualy exclusive")
+  }
+
   if $manage_group {
     group { $group:
       ensure => present,
@@ -117,61 +127,69 @@ class puppetboard (
     }
   }
 
-  file { $basedir:
-    ensure => 'directory',
-    owner  => $user,
-    group  => $group,
-    mode   => '0755',
+  if $manage_package {
+    package { $package_name:
+      ensure => installed,
+    }
   }
 
-  vcsrepo { "${basedir}/puppetboard":
-    ensure   => present,
-    provider => git,
-    owner    => $user,
-    source   => $git_source,
-    revision => $revision,
-    require  => [
-      User[$user],
-      Group[$group],
-    ],
-  }
+  if $manage_repo {
+    file { $basedir:
+      ensure => 'directory',
+      owner  => $user,
+      group  => $group,
+      mode   => '0755',
+    }
 
-  file { "${basedir}/puppetboard":
-    owner   => $user,
-    recurse => true,
-    require => Vcsrepo["${basedir}/puppetboard"],
-  }
+    vcsrepo { "${basedir}/puppetboard":
+      ensure   => present,
+      provider => git,
+      owner    => $user,
+      source   => $git_source,
+      revision => $revision,
+      require  => [
+        User[$user],
+        Group[$group],
+      ],
+    }
 
-  file { "${basedir}/puppetboard/settings.py":
-    ensure  => 'file',
-    group   => $group,
-    mode    => '0644',
-    owner   => $user,
-    content => template('puppetboard/settings.py.erb'),
-    require => Vcsrepo["${basedir}/puppetboard"],
-  }
+    file { "${basedir}/puppetboard":
+      owner   => $user,
+      recurse => true,
+      require => Vcsrepo["${basedir}/puppetboard"],
+    }
 
-  $pyvenv_proxy_env = $python_proxy ? {
-    undef => [],
-    default => [
-      "HTTP_PROXY=${python_proxy}",
-      "HTTPS_PROXY=${python_proxy}",
-    ]
-  }
-  python::pyvenv { $virtualenv_dir:
-    ensure      => present,
-    version     => $python_version,
-    systempkgs  => false,
-    owner       => $user,
-    group       => $group,
-    require     => Vcsrepo["${basedir}/puppetboard"],
-    environment => $pyvenv_proxy_env,
-  }
-  python::requirements { "${basedir}/puppetboard/requirements.txt":
-    virtualenv => $virtualenv_dir,
-    proxy      => $python_proxy,
-    owner      => $user,
-    group      => $group,
+    file { "${basedir}/puppetboard/settings.py":
+      ensure  => 'file',
+      group   => $group,
+      mode    => '0644',
+      owner   => $user,
+      content => template('puppetboard/settings.py.erb'),
+      require => Vcsrepo["${basedir}/puppetboard"],
+    }
+
+    $pyvenv_proxy_env = $python_proxy ? {
+      undef => [],
+      default => [
+        "HTTP_PROXY=${python_proxy}",
+        "HTTPS_PROXY=${python_proxy}",
+      ]
+    }
+    python::pyvenv { $virtualenv_dir:
+      ensure      => present,
+      version     => $python_version,
+      systempkgs  => false,
+      owner       => $user,
+      group       => $group,
+      require     => Vcsrepo["${basedir}/puppetboard"],
+      environment => $pyvenv_proxy_env,
+    }
+    python::requirements { "${basedir}/puppetboard/requirements.txt":
+      virtualenv => $virtualenv_dir,
+      proxy      => $python_proxy,
+      owner      => $user,
+      group      => $group,
+    }
   }
 
   if $listen == 'public' {
